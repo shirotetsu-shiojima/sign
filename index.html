@@ -152,6 +152,8 @@
       <div class="field"><span>地の色</span><input type="color" id="boardBg"></div>
       <div class="field"><span>縁の色</span><input type="color" id="boardBorder"></div>
       <div class="field"><span>縁の太さ(%)</span><input type="number" id="boardBorderW" min="0" max="20" step="0.5"></div>
+      <div class="field"><span>発光(夜間も見やすく)</span><input type="checkbox" id="boardGlow"></div>
+      <p class="note">発光させると、ゲーム内では板と文字を周りの明るさに関係なく最も明るく描きます。</p>
     </section>
     <section>
       <h2>板の大きさ(ブロック)</h2>
@@ -201,6 +203,7 @@
   const LIB_KEY = 'car_input_sign_library_v1';
   const ID_RE = /^[a-z0-9_]{1,48}$/;
   const MAX_ELEMENTS = 64;
+  const MAX_INPUT_FIELDS = 32; // 入力欄の数の上限(ゲーム内の編集画面では、名前つきの一覧に並べる)
   const MAX_SIZE = 8;          // 板の大きさの上限(ブロック)
   const MAX_OFFSET = 8;        // ずらし量の上限(ブロック)
   const MAX_IMAGES = 8;
@@ -245,7 +248,7 @@
   // 板の大きさ(size)は、横と縦のブロック数。ずらし量(offset)は、右・上・手前へのブロック数。
   function newDesign(id, name) {
     return { format: FMT, version: 1, id, name, size: { width: 1, height: 1 }, offset: { x: 0, y: 0, z: 0 },
-      board: { shape: 'rect', background: '#ffffff', border: '#1a1a1a', borderWidth: 0.04 }, elements: [] };
+      board: { shape: 'rect', background: '#ffffff', border: '#1a1a1a', borderWidth: 0.04 }, glow: false, elements: [] };
   }
 
   const sanitizeSize = (raw) => {
@@ -305,16 +308,49 @@
     }
   }
 
+  // ---- 入力欄の名前(同じ標識の中で重複させない) ----
+  let lastLabelFixes = 0; // 直近に読み込んだときに、重複を直した数
+  const inputCount = () => design.elements.filter((e) => e.type === 'text' && e.input).length;
+  function labelTaken(name, except) {
+    return design.elements.some((e) => e !== except && e.type === 'text' && e.input && e.label === name);
+  }
+  // 基になる名前から、重複しない名前を作る(文字 → 文字2 → 文字3 …)
+  function uniqueLabel(base, except) {
+    const b = (base || '').trim() || '文字';
+    if (!labelTaken(b, except)) return b;
+    for (let n = 2; ; n++) if (!labelTaken(b + n, except)) return b + n;
+  }
+  // 読み込んだ入力欄の名前を、空でなく重複しないように直す。直した数を返す
+  function fixLabels(elements) {
+    const seen = new Set();
+    let fixed = 0;
+    for (const e of elements) {
+      if (e.type !== 'text' || !e.input) continue;
+      let name = (e.label || '').trim() || '文字';
+      if (seen.has(name)) {
+        let n = 2;
+        while (seen.has(name + n)) n++;
+        name = name + n;
+        fixed++;
+      }
+      e.label = name;
+      seen.add(name);
+    }
+    return fixed;
+  }
+
   function sanitizeDesign(raw) {
     if (!raw || raw.format !== FMT || raw.version !== 1) throw new Error('標識のJSONの形式ではありません');
     if (typeof raw.id !== 'string' || !ID_RE.test(raw.id)) throw new Error('IDが不正です(英小文字・数字・_ の48文字以内)');
     if (!Array.isArray(raw.elements)) throw new Error('elements がありません');
     if (raw.elements.length > MAX_ELEMENTS) throw new Error(`要素は ${MAX_ELEMENTS} 個までです`);
     const elements = raw.elements.map(sanitizeElement);
+    if (elements.filter((e) => e.type === 'text' && e.input).length > MAX_INPUT_FIELDS) throw new Error(`入力欄は ${MAX_INPUT_FIELDS} 個までです`);
+    lastLabelFixes = fixLabels(elements);
     if (elements.filter((e) => e.type === 'image').length > MAX_IMAGES) throw new Error(`画像は ${MAX_IMAGES} 個までです`);
     const b = raw.board || {};
     return {
-      format: FMT, version: 1, id: raw.id, name: strOr(raw.name, raw.id, 64),
+      format: FMT, version: 1, id: raw.id, name: strOr(raw.name, raw.id, 64), glow: raw.glow === true,
       size: sanitizeSize(raw.size), offset: sanitizeOffset(raw.offset),
       board: { shape: BOARD_NAMES.has(b.shape) ? b.shape : 'rect', background: colorOr(b.background, '#ffffff'),
         border: colorOr(b.border, '#1a1a1a'), borderWidth: clampN(b.borderWidth, 0, 0.2, 0.04) },
@@ -328,7 +364,7 @@
       for (const [k, v] of Object.entries(e)) o[k] = typeof v === 'number' ? r4(v) : v;
       return o;
     });
-    return { format: FMT, version: 1, id: d.id, name: d.name,
+    return { format: FMT, version: 1, id: d.id, name: d.name, glow: !!d.glow,
       size: { width: d.size.width, height: d.size.height },
       offset: { x: r4(d.offset.x), y: r4(d.offset.y), z: r4(d.offset.z) },
       board: { shape: d.board.shape, background: d.board.background, border: d.board.border, borderWidth: r4(d.board.borderWidth) },
@@ -866,6 +902,10 @@
     if (type === 'text') el = DEFAULTS.text(opt === 'input');
     else el = DEFAULTS[type]();
     if (design.elements.length >= MAX_ELEMENTS) { toast(`要素は ${MAX_ELEMENTS} 個までです`); return; }
+    if (el.input) {
+      if (inputCount() >= MAX_INPUT_FIELDS) { toast(`入力欄は ${MAX_INPUT_FIELDS} 個までです`); return; }
+      el.label = uniqueLabel(el.label, null);
+    }
     // 同じ位置に重ならないよう、追加するたびに少しずつずらす
     const off = (design.elements.length % 5) * 0.03;
     if (el.type === 'line' || el.type === 'arrow') { el.x1 += off; el.x2 += off; el.y1 += off; el.y2 += off; }
@@ -888,6 +928,10 @@
     if (selected < 0) return;
     if (design.elements.length >= MAX_ELEMENTS) { toast(`要素は ${MAX_ELEMENTS} 個までです`); return; }
     const c = JSON.parse(JSON.stringify(design.elements[selected]));
+    if (c.type === 'text' && c.input) {
+      if (inputCount() >= MAX_INPUT_FIELDS) { toast(`入力欄は ${MAX_INPUT_FIELDS} 個までです`); return; }
+      c.label = uniqueLabel(c.label, null);
+    }
     for (const k of ['x', 'y']) if (k in c) c[k] = Math.min(1, c[k] + 0.03);
     if (c.type === 'line' || c.type === 'arrow') { c.x1 += 0.03; c.x2 += 0.03; c.y1 += 0.03; c.y2 += 0.03; }
     design.elements.splice(selected + 1, 0, c);
@@ -1000,6 +1044,23 @@
     return inp;
   }
 
+  // 入力欄の名前: 空や、同じ標識のほかの入力欄と同じ名前は使えない(その場合は元の名前に戻す)
+  function labelControl(el) {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.maxLength = 32;
+    inp.value = el.label;
+    inp.addEventListener('change', () => {
+      const v = inp.value.trim();
+      if (!v) { toast('入力欄の名前は空にできません'); inp.value = el.label; return; }
+      if (labelTaken(v, el)) { toast(`「${v}」は、ほかの入力欄で使われています`); inp.value = el.label; return; }
+      el.label = v;
+      commit();
+      refreshLayers();
+    });
+    return inp;
+  }
+
   function checkControl(el, key, onChange) {
     const inp = document.createElement('input');
     inp.type = 'checkbox';
@@ -1055,10 +1116,19 @@
       rows.push(field('回転(度)', numControl(el, 'rotation', { step: 1, min: -180, max: 180 })));
       rows.push(field('色', colorControl(el, 'color')));
     } else if (el.type === 'text') {
-      const ck = checkControl(el, 'input');
+      // 入力欄にする/しないを切り替える。入力欄は数の上限があり、名前は空や重複にならないようにする
+      const ck = document.createElement('input');
+      ck.type = 'checkbox';
+      ck.checked = !!el.input;
+      ck.addEventListener('change', () => {
+        if (ck.checked && inputCount() >= MAX_INPUT_FIELDS) { ck.checked = false; toast(`入力欄は ${MAX_INPUT_FIELDS} 個までです`); return; }
+        el.input = ck.checked;
+        if (el.input) el.label = uniqueLabel(el.label, el);
+        commit(); refreshLayers(); draw(); refreshSide();
+      });
       rows.push(field('ゲーム内で入力', ck));
       if (el.input) {
-        rows.push(field('入力欄の名前', textControl(el, 'label')));
+        rows.push(field('入力欄の名前', labelControl(el)));
         rows.push(field('初期の文字', textControl(el, 'text')));
         rows.push(field('最大の文字数', numControl(el, 'maxLength', { step: 1, min: 1, max: 32 })));
       } else {
@@ -1087,6 +1157,7 @@
     $('boardBg').value = design.board.background;
     $('boardBorder').value = design.board.border;
     $('boardBorderW').value = +(design.board.borderWidth * 100).toFixed(2);
+    $('boardGlow').checked = !!design.glow;
     $('boardW').value = design.size.width;
     $('boardH').value = design.size.height;
     $('offX').value = +design.offset.x.toFixed(3);
@@ -1262,6 +1333,7 @@
   $('boardBorder').addEventListener('change', () => commit());
   $('boardBorderW').addEventListener('input', () => { const v = Number($('boardBorderW').value); if (Number.isFinite(v)) { design.board.borderWidth = clampN(v / 100, 0, 0.2, 0.04); draw(); } });
   $('boardBorderW').addEventListener('change', () => commit());
+  $('boardGlow').addEventListener('change', () => { design.glow = $('boardGlow').checked; commit(); draw(); });
 
   // 板の大きさ(横・縦のブロック数)
   for (const [id, key] of [['boardW', 'width'], ['boardH', 'height']]) {
@@ -1354,6 +1426,7 @@
     try {
       const raw = JSON.parse(await f.text());
       const d = sanitizeDesign(raw);
+      if (lastLabelFixes) toast('同じ名前の入力欄があったので、番号を付けました');
       if (library.designs[d.id]) { d.id = uniqueId(d.id.replace(/_\d+$/, '')); d.name += ' (読み込み)'; toast('同じIDがあったため、新しいIDにしました'); }
       library.designs[d.id] = d;
       switchTo(d.id);
