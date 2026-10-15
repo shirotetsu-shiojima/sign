@@ -1,0 +1,1384 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>標識デザインツール</title>
+<style>
+  :root {
+    --bg: #eef1f5; --panel: #ffffff; --ink: #1f2933; --muted: #6b7785; --line: #d5dce4;
+    --accent: #1c7ed6; --danger: #c92a2a; --sel: #1c7ed6; --field: #f7f9fb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151a20; --panel: #1f262e; --ink: #e4e9ee; --muted: #8a96a3; --line: #323c47;
+      --accent: #74c0fc; --danger: #ff8787; --sel: #74c0fc; --field: #161c23;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151a20; --panel: #1f262e; --ink: #e4e9ee; --muted: #8a96a3; --line: #323c47;
+    --accent: #74c0fc; --danger: #ff8787; --sel: #74c0fc; --field: #161c23;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font-family: system-ui, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; font-size: 13px; overflow: hidden; }
+  #app { display: grid; grid-template-rows: auto 1fr; grid-template-columns: 220px 1fr 300px; height: 100vh; }
+  header { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+    padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; }
+  header label { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+  header input[type="text"] { width: 150px; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .err { color: var(--danger); font-size: 12px; }
+  aside { background: var(--panel); overflow-y: auto; padding: 10px 12px; border-right: 1px solid var(--line); }
+  aside.right { border-right: none; border-left: 1px solid var(--line); }
+  section { margin-bottom: 14px; }
+  h2 { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .04em; margin: 0 0 6px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .sym-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  button, .btn { font: inherit; border: 1px solid var(--accent); color: var(--accent); background: transparent;
+    border-radius: 6px; padding: 5px 9px; cursor: pointer; text-align: center; }
+  button:hover:not(:disabled), .btn:hover { background: var(--accent); color: #fff; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.plain { border-color: var(--line); color: var(--ink); }
+  button.plain:hover:not(:disabled) { background: var(--line); color: var(--ink); }
+  button.danger { border-color: var(--danger); color: var(--danger); }
+  button.danger:hover { background: var(--danger); color: #fff; }
+  input, select { font: inherit; color: var(--ink); background: var(--field); border: 1px solid var(--line);
+    border-radius: 5px; padding: 3px 5px; }
+  input[type="color"] { padding: 0; width: 34px; height: 24px; }
+  input[type="number"] { width: 70px; }
+  .field { display: grid; grid-template-columns: 96px 1fr; gap: 6px; align-items: center; margin: 4px 0; }
+  .field > span { color: var(--muted); }
+  .field input[type="text"], .field select { width: 100%; }
+  .checkrow { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+  #stageWrap { position: relative; min-width: 0; min-height: 0; }
+  #stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .layer { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 5px; cursor: pointer; }
+  .layer:hover { background: var(--field); }
+  .layer.on { background: var(--accent); color: #fff; }
+  .layer small { color: inherit; opacity: .8; }
+  .list { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; padding: 4px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .note { color: var(--muted); font-size: 12px; line-height: 1.6; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  #toast { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--panel);
+    padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.show { opacity: .95; }
+  @media (max-width: 900px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr auto; height: auto; min-height: 100vh; overflow: auto; }
+    html, body { overflow: auto; }
+    #stageWrap { height: 70vh; }
+    aside { border: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>標識デザインツール</h1>
+    <label>名前 <input type="text" id="name"></label>
+    <label>ID <input type="text" id="id" maxlength="48"></label>
+    <span id="idErr" class="err"></span>
+    <label>1ブロックの画素数
+      <select id="pngSize"><option value="256">256px</option><option value="512" selected>512px</option><option value="1024">1024px</option></select>
+    </label>
+    <span style="flex:1"></span>
+    <button id="btnExportOne">この標識を書き出す</button>
+    <button id="btnExportAll" class="plain">すべて書き出す</button>
+  </header>
+
+  <aside>
+    <section>
+      <h2>標識一覧</h2>
+      <select id="libSelect" style="width:100%"></select>
+      <div class="actions">
+        <button id="btnNew">新規</button>
+        <button id="btnDup" class="plain">複製</button>
+        <button id="btnDel" class="danger">削除</button>
+      </div>
+      <div class="actions">
+        <label class="btn">JSONを読み込む<input id="importFile" type="file" accept=".json,application/json" hidden></label>
+      </div>
+      <p class="note">書き出した JSON を読み込むと、画像や配置をそのまま編集できます。</p>
+    </section>
+    <section>
+      <h2>図形</h2>
+      <div class="grid">
+        <button data-add="shape:rect">四角</button>
+        <button data-add="shape:rounded">角丸</button>
+        <button data-add="shape:ellipse">楕円</button>
+        <button data-add="shape:triangle">三角</button>
+        <button data-add="shape:diamond">ひし形</button>
+        <button data-add="shape:octagon">八角</button>
+      </div>
+    </section>
+    <section>
+      <h2>線・矢印</h2>
+      <div class="grid">
+        <button data-add="line">線</button>
+        <button data-add="arrow">矢印</button>
+      </div>
+    </section>
+    <section>
+      <h2>記号・イラスト</h2>
+      <div class="sym-grid" id="symGrid"></div>
+    </section>
+    <section>
+      <h2>文字</h2>
+      <div class="grid">
+        <button data-add="text:fixed">固定の文字</button>
+        <button data-add="text:input">入力する文字</button>
+      </div>
+      <p class="note">「入力する文字」は、ゲーム内で設置する時に文字を入力します。</p>
+    </section>
+    <section>
+      <h2>画像</h2>
+      <div class="grid">
+        <label class="btn">画像を取り込む<input id="imageFile" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+      </div>
+      <p class="note">画像は板の中で動かしたり、大きさや回転を変えられます。大きい画像は1024pxまで縮めて保存します。</p>
+    </section>
+  </aside>
+
+  <div id="stageWrap"><canvas id="stage"></canvas></div>
+
+  <aside class="right">
+    <section>
+      <h2>板の設定</h2>
+      <div class="field"><span>形</span><select id="boardShape"></select></div>
+      <div class="field"><span>地の色</span><input type="color" id="boardBg"></div>
+      <div class="field"><span>縁の色</span><input type="color" id="boardBorder"></div>
+      <div class="field"><span>縁の太さ(%)</span><input type="number" id="boardBorderW" min="0" max="20" step="0.5"></div>
+    </section>
+    <section>
+      <h2>板の大きさ(ブロック)</h2>
+      <div class="field"><span>横</span><input type="number" id="boardW" min="1" max="8" step="1"></div>
+      <div class="field"><span>縦</span><input type="number" id="boardH" min="1" max="8" step="1"></div>
+      <p class="note">標準は1×1です。大きくしても、ゲーム内の当たり判定は1ブロックのままです。</p>
+    </section>
+    <section>
+      <h2>既定のずらし量(ブロック)</h2>
+      <div class="field"><span>右へ</span><input type="number" id="offX" min="-8" max="8" step="0.05"></div>
+      <div class="field"><span>上へ</span><input type="number" id="offY" min="-8" max="8" step="0.05"></div>
+      <div class="field"><span>手前へ</span><input type="number" id="offZ" min="-8" max="8" step="0.05"></div>
+      <p class="note">板の中心を、ブロックの中心からこの量だけずらします。「手前」は板の表の向きです。設置したあとも、ゲーム内の編集ツールで変えられます。</p>
+    </section>
+    <section id="selSection">
+      <h2>選択中の要素</h2>
+      <div id="selBody" class="note">要素を選ぶと、ここで編集できます。</div>
+      <div class="actions" id="selActions" style="display:none">
+        <button id="btnUp" class="plain">前へ</button>
+        <button id="btnDown" class="plain">後ろへ</button>
+        <button id="btnDupEl" class="plain">複製</button>
+        <button id="btnDelEl" class="danger">削除</button>
+      </div>
+    </section>
+    <section>
+      <h2>並び順(下ほど手前)</h2>
+      <div id="layers" class="list"></div>
+    </section>
+    <section>
+      <h2>使い方</h2>
+      <p class="note">
+        書き出したファイルは、リソースパックの次の場所に入れます。<br>
+        <code>assets/car_input/signs/&lt;ID&gt;.json</code><br>
+        <code>assets/car_input/textures/sign/&lt;ID&gt;.png</code><br>
+        <code>assets/car_input/signs/index.json</code>(「すべて書き出す」で作られます)
+      </p>
+      <p class="note">操作: ドラッグで移動、角や端の丸でサイズ変更。Delete で削除、Ctrl+Z / Ctrl+Y で取り消し・やり直し。矢印キーで少しずつ動かせます。</p>
+    </section>
+  </aside>
+</div>
+<div id="toast"></div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const FMT = 'car_input.sign';
+  const IDX_FMT = 'car_input.sign.index';
+  const LIB_KEY = 'car_input_sign_library_v1';
+  const ID_RE = /^[a-z0-9_]{1,48}$/;
+  const MAX_ELEMENTS = 64;
+  const MAX_SIZE = 8;          // 板の大きさの上限(ブロック)
+  const MAX_OFFSET = 8;        // ずらし量の上限(ブロック)
+  const MAX_IMAGES = 8;
+  const MAX_IMAGE_CHARS = 2000000;
+  const IMG_RE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+  const EXPORT_MAX_PX = 4096;  // 書き出し画像の一辺の上限
+  const UNDO_LIMIT = 50;
+  const FONTS = {
+    sans: '"Noto Sans CJK JP","Noto Sans JP","Hiragino Sans","Yu Gothic UI",Meiryo,sans-serif',
+    serif: '"Noto Serif JP","Yu Mincho","Hiragino Mincho ProN",serif',
+    mono: 'Consolas,"Courier New",monospace',
+  };
+  const FONT_LABEL = { sans: 'ゴシック', serif: '明朝', mono: '等幅' };
+  const BOARD_SHAPES = [['rect', '四角'], ['rounded', '角丸'], ['circle', '円'], ['triangle', '三角'], ['diamond', 'ひし形'], ['octagon', '八角']];
+  const SHAPE_KINDS = [['rect', '四角'], ['rounded', '角丸'], ['ellipse', '楕円'], ['triangle', '三角'], ['diamond', 'ひし形'], ['octagon', '八角']];
+  const SYMBOLS = [['no_entry', '進入禁止'], ['no_parking', '駐車禁止'], ['pedestrian', '歩行者'], ['bicycle', '自転車'],
+    ['warning', '注意'], ['info', '案内'], ['parking', '駐車場'], ['hospital', '病院'], ['crosswalk', '横断歩道'],
+    ['chevron', '曲がり'], ['home', '施設']];
+  const SYMBOL_NAMES = new Set(SYMBOLS.map((s) => s[0]));
+  const SHAPE_NAMES = new Set(SHAPE_KINDS.map((s) => s[0]));
+  const BOARD_NAMES = new Set(BOARD_SHAPES.map((s) => s[0]));
+  const DEFAULTS = {
+    shape: () => ({ type: 'shape', kind: 'rect', x: 0.35, y: 0.35, w: 0.3, h: 0.3, rotation: 0, fill: '#ffcc00', stroke: '#1a1a1a', strokeWidth: 0.01 }),
+    line: () => ({ type: 'line', x1: 0.3, y1: 0.5, x2: 0.7, y2: 0.5, color: '#1a1a1a', width: 0.03 }),
+    arrow: () => ({ type: 'arrow', x1: 0.3, y1: 0.5, x2: 0.7, y2: 0.5, color: '#1a1a1a', width: 0.04, headSize: 3 }),
+    symbol: () => ({ type: 'symbol', name: 'info', x: 0.35, y: 0.35, w: 0.3, h: 0.3, rotation: 0, color: '#1a1a1a' }),
+    image: () => ({ type: 'image', src: '', x: 0.2, y: 0.2, w: 0.5, h: 0.5, rotation: 0 }),
+    text: (input) => ({ type: 'text', x: 0.1, y: 0.42, w: 0.8, h: 0.16, text: input ? '文字' : 'テキスト', color: '#1a1a1a',
+      font: 'sans', bold: true, align: 'center', input: !!input, label: input ? '文字' : '', maxLength: 16, rotation: 0 }),
+  };
+
+  // ---- 共通の小さな関数 ----
+  const r4 = (v) => Math.round(v * 10000) / 10000;
+  const clampN = (v, lo, hi, fb) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fb);
+  const colorOr = (v, fb) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : fb);
+  const strOr = (v, fb, max) => (typeof v === 'string' ? v.slice(0, max) : fb);
+  const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 1800); };
+
+  // ---- 標識データ ----
+  // 座標(x, y, w, h)は板に対する割合(0〜1)。線の太さなどは1ブロックの大きさに対する割合。
+  // 板の大きさ(size)は、横と縦のブロック数。ずらし量(offset)は、右・上・手前へのブロック数。
+  function newDesign(id, name) {
+    return { format: FMT, version: 1, id, name, size: { width: 1, height: 1 }, offset: { x: 0, y: 0, z: 0 },
+      board: { shape: 'rect', background: '#ffffff', border: '#1a1a1a', borderWidth: 0.04 }, elements: [] };
+  }
+
+  const sanitizeSize = (raw) => {
+    const s = raw && typeof raw === 'object' ? raw : {};
+    return { width: Math.round(clampN(s.width, 1, MAX_SIZE, 1)), height: Math.round(clampN(s.height, 1, MAX_SIZE, 1)) };
+  };
+  const sanitizeOffset = (raw) => {
+    const o = raw && typeof raw === 'object' ? raw : {};
+    return { x: clampN(o.x, -MAX_OFFSET, MAX_OFFSET, 0), y: clampN(o.y, -MAX_OFFSET, MAX_OFFSET, 0), z: clampN(o.z, -MAX_OFFSET, MAX_OFFSET, 0) };
+  };
+  const sanitizeImageSrc = (src) => {
+    if (typeof src !== 'string' || src.length > MAX_IMAGE_CHARS || !IMG_RE.test(src)) throw new Error('画像の形式が不正です(PNG・JPEG・WebP のみ)');
+    return src;
+  };
+
+  function sanitizeElement(e) {
+    if (!e || typeof e !== 'object') throw new Error('要素の形式が不正です');
+    switch (e.type) {
+      case 'shape': {
+        const d = DEFAULTS.shape();
+        return { ...d, kind: SHAPE_NAMES.has(e.kind) ? e.kind : 'rect',
+          x: clampN(e.x, -1, 2, d.x), y: clampN(e.y, -1, 2, d.y), w: clampN(e.w, 0.001, 2, d.w), h: clampN(e.h, 0.001, 2, d.h),
+          rotation: clampN(e.rotation, -180, 180, 0), fill: colorOr(e.fill, d.fill), stroke: colorOr(e.stroke, d.stroke),
+          strokeWidth: clampN(e.strokeWidth, 0, 0.2, d.strokeWidth) };
+      }
+      case 'image': {
+        const d = DEFAULTS.image();
+        return { ...d, src: sanitizeImageSrc(e.src),
+          x: clampN(e.x, -1, 2, d.x), y: clampN(e.y, -1, 2, d.y), w: clampN(e.w, 0.001, 2, d.w), h: clampN(e.h, 0.001, 2, d.h),
+          rotation: clampN(e.rotation, -180, 180, 0) };
+      }
+      case 'line':
+      case 'arrow': {
+        const d = DEFAULTS[e.type]();
+        const o = { ...d, x1: clampN(e.x1, -1, 2, d.x1), y1: clampN(e.y1, -1, 2, d.y1), x2: clampN(e.x2, -1, 2, d.x2),
+          y2: clampN(e.y2, -1, 2, d.y2), color: colorOr(e.color, d.color), width: clampN(e.width, 0.001, 0.3, d.width) };
+        if (e.type === 'arrow') o.headSize = clampN(e.headSize, 1, 6, 3);
+        return o;
+      }
+      case 'symbol': {
+        const d = DEFAULTS.symbol();
+        return { ...d, name: SYMBOL_NAMES.has(e.name) ? e.name : 'info', x: clampN(e.x, -1, 2, d.x), y: clampN(e.y, -1, 2, d.y),
+          w: clampN(e.w, 0.001, 2, d.w), h: clampN(e.h, 0.001, 2, d.h), rotation: clampN(e.rotation, -180, 180, 0), color: colorOr(e.color, d.color) };
+      }
+      case 'text': {
+        const input = e.input === true;
+        const d = DEFAULTS.text(input);
+        return { ...d, text: strOr(e.text, d.text, 200), input,
+          label: input ? strOr(e.label, '文字', 32) : '', maxLength: Math.round(clampN(e.maxLength, 1, 32, 16)),
+          font: Object.prototype.hasOwnProperty.call(FONTS, e.font) ? e.font : 'sans', bold: e.bold === true,
+          align: ['left', 'center', 'right'].includes(e.align) ? e.align : 'center', color: colorOr(e.color, d.color),
+          x: clampN(e.x, -1, 2, d.x), y: clampN(e.y, -1, 2, d.y), w: clampN(e.w, 0.001, 2, d.w), h: clampN(e.h, 0.001, 2, d.h),
+          rotation: clampN(e.rotation, -180, 180, 0) };
+      }
+      default:
+        throw new Error('未知の要素の種類です: ' + e.type);
+    }
+  }
+
+  function sanitizeDesign(raw) {
+    if (!raw || raw.format !== FMT || raw.version !== 1) throw new Error('標識のJSONの形式ではありません');
+    if (typeof raw.id !== 'string' || !ID_RE.test(raw.id)) throw new Error('IDが不正です(英小文字・数字・_ の48文字以内)');
+    if (!Array.isArray(raw.elements)) throw new Error('elements がありません');
+    if (raw.elements.length > MAX_ELEMENTS) throw new Error(`要素は ${MAX_ELEMENTS} 個までです`);
+    const elements = raw.elements.map(sanitizeElement);
+    if (elements.filter((e) => e.type === 'image').length > MAX_IMAGES) throw new Error(`画像は ${MAX_IMAGES} 個までです`);
+    const b = raw.board || {};
+    return {
+      format: FMT, version: 1, id: raw.id, name: strOr(raw.name, raw.id, 64),
+      size: sanitizeSize(raw.size), offset: sanitizeOffset(raw.offset),
+      board: { shape: BOARD_NAMES.has(b.shape) ? b.shape : 'rect', background: colorOr(b.background, '#ffffff'),
+        border: colorOr(b.border, '#1a1a1a'), borderWidth: clampN(b.borderWidth, 0, 0.2, 0.04) },
+      elements,
+    };
+  }
+
+  function toJSON(d) {
+    const el = d.elements.map((e) => {
+      const o = {};
+      for (const [k, v] of Object.entries(e)) o[k] = typeof v === 'number' ? r4(v) : v;
+      return o;
+    });
+    return { format: FMT, version: 1, id: d.id, name: d.name,
+      size: { width: d.size.width, height: d.size.height },
+      offset: { x: r4(d.offset.x), y: r4(d.offset.y), z: r4(d.offset.z) },
+      board: { shape: d.board.shape, background: d.board.background, border: d.board.border, borderWidth: r4(d.board.borderWidth) },
+      elements: el };
+  }
+
+  // ---- 画像の読み込み(data URL を Image にして、描画のたびに使い回す) ----
+  const imageCache = new Map();
+  function getImage(src) {
+    if (!src) return { ready: false, img: null, promise: Promise.resolve() };
+    let rec = imageCache.get(src);
+    if (!rec) {
+      const img = new Image();
+      rec = { img, ready: false, promise: null };
+      rec.promise = new Promise((resolve) => {
+        img.onload = () => { rec.ready = true; resolve(); };
+        img.onerror = () => resolve();
+      });
+      rec.promise.then(() => { if (rec.ready) draw(); });
+      imageCache.set(src, rec);
+      img.src = src;
+    }
+    return rec;
+  }
+  function ensureImages(d) {
+    return Promise.all(d.elements.filter((e) => e.type === 'image').map((e) => getImage(e.src).promise));
+  }
+
+  // ---- 描画(編集画面と書き出しで同じ関数を使う) ----
+  // M = { U: 1ブロックの画素数, BW・BH: 板の画素数 }
+  function roundRectPath(g, x, y, w, h, r) {
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  }
+
+  function shapePath(g, kind, x, y, w, h) {
+    g.beginPath();
+    switch (kind) {
+      case 'rounded': roundRectPath(g, x, y, w, h, Math.min(w, h) * 0.2); break;
+      case 'ellipse':
+      case 'circle': g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); break;
+      case 'triangle': g.moveTo(x + w / 2, y); g.lineTo(x + w, y + h); g.lineTo(x, y + h); g.closePath(); break;
+      case 'diamond': g.moveTo(x + w / 2, y); g.lineTo(x + w, y + h / 2); g.lineTo(x + w / 2, y + h); g.lineTo(x, y + h / 2); g.closePath(); break;
+      case 'octagon': {
+        const a = 0.29;
+        [[a, 0], [1 - a, 0], [1, a], [1, 1 - a], [1 - a, 1], [a, 1], [0, 1 - a], [0, a]].forEach(([u, v], i) => {
+          const px = x + u * w, py = y + v * h;
+          if (i) g.lineTo(px, py); else g.moveTo(px, py);
+        });
+        g.closePath();
+        break;
+      }
+      default: g.rect(x, y, w, h);
+    }
+  }
+
+  function drawSymbol(g, name, r, color) {
+    // (0,0) が中心、r が大きさの半分
+    g.save();
+    g.fillStyle = color;
+    g.strokeStyle = color;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    switch (name) {
+      case 'no_entry':
+        g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#ffffff'; g.fillRect(-r * 0.6, -r * 0.16, r * 1.2, r * 0.32);
+        break;
+      case 'no_parking':
+        g.lineWidth = r * 0.22; g.beginPath(); g.arc(0, 0, r * 0.82, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.moveTo(-r * 0.58, -r * 0.58); g.lineTo(r * 0.58, r * 0.58); g.stroke();
+        break;
+      case 'pedestrian':
+        g.beginPath(); g.arc(0, -r * 0.6, r * 0.18, 0, Math.PI * 2); g.fill();
+        g.lineWidth = r * 0.2;
+        g.beginPath(); g.moveTo(0, -r * 0.3); g.lineTo(0, r * 0.2); g.stroke();
+        g.beginPath(); g.moveTo(-r * 0.4, -r * 0.1); g.lineTo(r * 0.4, -r * 0.1); g.stroke();
+        g.beginPath(); g.moveTo(0, r * 0.2); g.lineTo(-r * 0.3, r * 0.85); g.stroke();
+        g.beginPath(); g.moveTo(0, r * 0.2); g.lineTo(r * 0.3, r * 0.85); g.stroke();
+        break;
+      case 'bicycle':
+        g.lineWidth = r * 0.14;
+        g.beginPath(); g.arc(-r * 0.55, r * 0.4, r * 0.38, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.arc(r * 0.55, r * 0.4, r * 0.38, 0, Math.PI * 2); g.stroke();
+        g.beginPath(); g.moveTo(-r * 0.55, r * 0.4); g.lineTo(0, -r * 0.1); g.lineTo(r * 0.55, r * 0.4); g.stroke();
+        g.beginPath(); g.moveTo(-r * 0.1, -r * 0.1); g.lineTo(-r * 0.3, -r * 0.5); g.lineTo(0, -r * 0.5); g.stroke();
+        break;
+      case 'warning':
+        g.lineWidth = r * 0.16;
+        g.beginPath(); g.moveTo(0, -r * 0.85); g.lineTo(r * 0.85, r * 0.7); g.lineTo(-r * 0.85, r * 0.7); g.closePath(); g.stroke();
+        g.fillRect(-r * 0.08, -r * 0.4, r * 0.16, r * 0.7);
+        g.beginPath(); g.arc(0, r * 0.45, r * 0.09, 0, Math.PI * 2); g.fill();
+        break;
+      case 'info':
+        g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#ffffff';
+        g.beginPath(); g.arc(0, -r * 0.5, r * 0.12, 0, Math.PI * 2); g.fill();
+        g.fillRect(-r * 0.12, -r * 0.25, r * 0.24, r * 0.85);
+        break;
+      case 'parking':
+        g.beginPath(); roundRectPath(g, -r, -r, r * 2, r * 2, r * 0.2); g.fill();
+        g.fillStyle = '#ffffff';
+        g.font = `bold ${r * 1.5}px ${FONTS.sans}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText('P', 0, r * 0.05);
+        break;
+      case 'hospital':
+        g.fillRect(-r * 0.22, -r * 0.85, r * 0.44, r * 1.7);
+        g.fillRect(-r * 0.85, -r * 0.22, r * 1.7, r * 0.44);
+        break;
+      case 'crosswalk':
+        for (let i = 0; i < 4; i++) g.fillRect(-r * 0.9 + i * r * 0.45, -r * 0.7, r * 0.25, r * 1.4);
+        break;
+      case 'chevron':
+        g.lineWidth = r * 0.3;
+        g.beginPath(); g.moveTo(-r * 0.4, -r * 0.7); g.lineTo(r * 0.4, 0); g.lineTo(-r * 0.4, r * 0.7); g.stroke();
+        break;
+      case 'home':
+        g.beginPath();
+        g.moveTo(0, -r * 0.9); g.lineTo(r * 0.8, -r * 0.1); g.lineTo(r * 0.6, -r * 0.1); g.lineTo(r * 0.6, r * 0.8);
+        g.lineTo(-r * 0.6, r * 0.8); g.lineTo(-r * 0.6, -r * 0.1); g.lineTo(-r * 0.8, -r * 0.1); g.closePath(); g.fill();
+        break;
+      default:
+        break;
+    }
+    g.restore();
+  }
+
+  function drawText(g, el, M, editor) {
+    const isPlaceholder = el.input && editor;
+    const text = isPlaceholder ? (el.label || '文字') : el.text;
+    const w = el.w * M.BW, h = el.h * M.BH;
+    g.save();
+    g.translate((el.x + el.w / 2) * M.BW, (el.y + el.h / 2) * M.BH);
+    g.rotate((el.rotation || 0) * Math.PI / 180);
+    g.globalAlpha = isPlaceholder ? 0.75 : 1;
+    const fam = FONTS[el.font] || FONTS.sans;
+    const style = el.bold ? 'bold ' : '';
+    // 文字の見えている部分(インク)で大きさと位置を決める。Mod の GothicRaster と同じ決め方
+    const measure = (p) => {
+      g.font = `${style}${p}px ${fam}`;
+      g.textAlign = 'left';
+      g.textBaseline = 'alphabetic';
+      return g.measureText(text);
+    };
+    let px = h * 0.8;
+    let m = measure(px);
+    let inkW = m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
+    const maxW = w * 0.95;
+    if (inkW > maxW && inkW > 0) { px *= maxW / inkW; m = measure(px); inkW = m.actualBoundingBoxLeft + m.actualBoundingBoxRight; }
+    g.fillStyle = el.color;
+    const pad = w * 0.025;
+    const inkLeft = el.align === 'left' ? -w / 2 + pad : el.align === 'right' ? w / 2 - pad - inkW : -inkW / 2;
+    const drawX = inkLeft + m.actualBoundingBoxLeft;
+    const drawY = (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+    if (text) g.fillText(text, drawX, drawY);
+    if (isPlaceholder) {
+      g.globalAlpha = 1;
+      g.setLineDash([M.U * 0.012, M.U * 0.008]);
+      g.strokeStyle = '#2b7de9';
+      g.lineWidth = Math.max(1, M.U * 0.004);
+      g.strokeRect(-w / 2, -h / 2, w, h);
+    }
+    g.restore();
+  }
+
+  function drawElement(g, el, M, editor) {
+    const { U, BW, BH } = M;
+    if (el.type === 'shape') {
+      g.save();
+      g.translate((el.x + el.w / 2) * BW, (el.y + el.h / 2) * BH);
+      g.rotate(el.rotation * Math.PI / 180);
+      shapePath(g, el.kind, -el.w * BW / 2, -el.h * BH / 2, el.w * BW, el.h * BH);
+      g.fillStyle = el.fill;
+      g.fill();
+      if (el.strokeWidth > 0) { g.lineWidth = el.strokeWidth * U; g.strokeStyle = el.stroke; g.lineJoin = 'round'; g.stroke(); }
+      g.restore();
+    } else if (el.type === 'image') {
+      const w = el.w * BW, h = el.h * BH;
+      const rec = getImage(el.src);
+      g.save();
+      g.translate((el.x + el.w / 2) * BW, (el.y + el.h / 2) * BH);
+      g.rotate(el.rotation * Math.PI / 180);
+      if (rec.ready) {
+        g.drawImage(rec.img, -w / 2, -h / 2, w, h);
+      } else {
+        g.setLineDash([U * 0.02, U * 0.02]);
+        g.strokeStyle = '#8a96a3';
+        g.lineWidth = Math.max(1, U * 0.005);
+        g.strokeRect(-w / 2, -h / 2, w, h);
+      }
+      g.restore();
+    } else if (el.type === 'line') {
+      g.save();
+      g.beginPath(); g.moveTo(el.x1 * BW, el.y1 * BH); g.lineTo(el.x2 * BW, el.y2 * BH);
+      g.strokeStyle = el.color; g.lineWidth = el.width * U; g.lineCap = 'round'; g.stroke();
+      g.restore();
+    } else if (el.type === 'arrow') {
+      const x1 = el.x1 * BW, y1 = el.y1 * BH, x2 = el.x2 * BW, y2 = el.y2 * BH;
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      if (len < 1e-6) return;
+      const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+      const hl = el.width * U * el.headSize;
+      const bx = x2 - ux * hl, by = y2 - uy * hl;
+      g.save();
+      g.strokeStyle = el.color; g.fillStyle = el.color; g.lineWidth = el.width * U; g.lineCap = 'butt';
+      g.beginPath(); g.moveTo(x1, y1); g.lineTo(bx, by); g.stroke();
+      g.beginPath();
+      g.moveTo(x2, y2);
+      g.lineTo(bx - uy * hl * 0.5, by + ux * hl * 0.5);
+      g.lineTo(bx + uy * hl * 0.5, by - ux * hl * 0.5);
+      g.closePath(); g.fill();
+      g.restore();
+    } else if (el.type === 'symbol') {
+      g.save();
+      g.translate((el.x + el.w / 2) * BW, (el.y + el.h / 2) * BH);
+      g.rotate(el.rotation * Math.PI / 180);
+      drawSymbol(g, el.name, Math.min(el.w * BW, el.h * BH) / 2 * 0.95, el.color);
+      g.restore();
+    } else if (el.type === 'text') {
+      drawText(g, el, M, editor);
+    }
+  }
+
+  // 板の中身を描く。書き出しでは入力文字を描かない(ゲーム内で入れるため)
+  // U は1ブロックの画素数。板の大きさ(横・縦のブロック数)は d.size で決まる
+  function paintBoard(g, d, U, editor) {
+    const b = d.board;
+    const BW = U * d.size.width, BH = U * d.size.height;
+    const M = { U, BW, BH };
+    g.save();
+    shapePath(g, b.shape, 0, 0, BW, BH);
+    g.clip();
+    g.fillStyle = b.background;
+    g.fillRect(0, 0, BW, BH);
+    for (const el of d.elements) {
+      if (el.type === 'text' && el.input && !editor) continue;
+      drawElement(g, el, M, editor);
+    }
+    g.restore();
+    if (b.borderWidth > 0) {
+      g.save();
+      shapePath(g, b.shape, 0, 0, BW, BH);
+      g.lineWidth = b.borderWidth * U;
+      g.strokeStyle = b.border;
+      g.lineJoin = 'round';
+      g.stroke();
+      g.restore();
+    }
+  }
+
+  // ---- 要素の当たり判定・取っ手 ----
+  // 板の大きさが正方形でないので、回転の計算は「ブロック単位」の座標で行う
+  // (x は横のブロック数を掛け、y は縦のブロック数を掛ける)
+  const rotOf = (el) => (el.rotation || 0) * Math.PI / 180;
+  function distSeg(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+    t = Math.min(1, Math.max(0, t));
+    return Math.hypot(ax + t * dx - px, ay + t * dy - py);
+  }
+  // 板の上の点(割合)を、要素の中心から見た回転前の座標(ブロック単位)にする
+  function localOf(el, px, py) {
+    const W = design.size.width, H = design.size.height;
+    const cX = (el.x + el.w / 2) * W, cY = (el.y + el.h / 2) * H, t = rotOf(el);
+    const dX = px * W - cX, dY = py * H - cY;
+    return [dX * Math.cos(t) + dY * Math.sin(t), -dX * Math.sin(t) + dY * Math.cos(t)];
+  }
+  // 要素の中心から見た座標(ブロック単位)を、板の上の点(割合)にする
+  function worldOfLocal(el, lx, ly) {
+    const W = design.size.width, H = design.size.height;
+    const cX = (el.x + el.w / 2) * W, cY = (el.y + el.h / 2) * H, t = rotOf(el);
+    return [(cX + lx * Math.cos(t) - ly * Math.sin(t)) / W, (cY + lx * Math.sin(t) + ly * Math.cos(t)) / H];
+  }
+  function hitTest(px, py) {
+    const els = design.elements;
+    const W = design.size.width, H = design.size.height;
+    for (let i = els.length - 1; i >= 0; i--) {
+      const el = els[i];
+      if (el.type === 'line' || el.type === 'arrow') {
+        const tol = Math.max(0.012, el.width / 2 + 0.008);
+        if (distSeg(px, py, el.x1, el.y1, el.x2, el.y2) <= tol) return i;
+      } else {
+        const [lx, ly] = localOf(el, px, py);
+        if (Math.abs(lx) <= el.w * W / 2 && Math.abs(ly) <= el.h * H / 2) return i;
+      }
+    }
+    return -1;
+  }
+  // 取っ手: 線は両端、それ以外は右下の角
+  function handleAt(el, px, py) {
+    const R = 0.02;
+    if (el.type === 'line' || el.type === 'arrow') {
+      if (Math.hypot(px - el.x1, py - el.y1) <= R) return 'p1';
+      if (Math.hypot(px - el.x2, py - el.y2) <= R) return 'p2';
+      return null;
+    }
+    const W = design.size.width, H = design.size.height;
+    const [hx, hy] = worldOfLocal(el, el.w * W / 2, el.h * H / 2);
+    return Math.hypot(px - hx, py - hy) <= R ? 'br' : null;
+  }
+
+  // ---- 状態 ----
+  let library = { currentId: null, designs: {} };
+  let design = null;
+  let selected = -1;
+  let undoStack = [], redoStack = [];
+  let lastSnap = '';
+  let view = { x0: 0, y0: 0, U: 100, bw: 100, bh: 100 };
+  let drag = null;
+
+  function uniqueId(base) {
+    let i = 1, id;
+    do { id = `${base}_${String(i).padStart(2, '0')}`; i++; } while (library.designs[id]);
+    return id;
+  }
+
+  function saveLibrary() {
+    // 辞書のキーは、必ず標識の id と揃える(重複や取り残しを防ぐ)
+    const fixed = {};
+    for (const d of Object.values(library.designs)) fixed[d.id] = d;
+    if (design) fixed[design.id] = design;
+    library.designs = fixed;
+    library.currentId = design ? design.id : library.currentId;
+    try { localStorage.setItem(LIB_KEY, JSON.stringify(library)); } catch (e) { /* 保存できなくても使える(画像が大きいときなど) */ }
+  }
+
+  function loadLibrary() {
+    let raw = null;
+    try { raw = JSON.parse(localStorage.getItem(LIB_KEY)); } catch (e) { raw = null; }
+    library = { currentId: null, designs: {} };
+    if (raw && raw.designs && typeof raw.designs === 'object') {
+      for (const d of Object.values(raw.designs)) {
+        try { const s = sanitizeDesign(d); library.designs[s.id] = s; } catch (e) { /* 壊れた標識は読み飛ばす */ }
+      }
+    }
+    const ids = Object.keys(library.designs);
+    if (!ids.length) {
+      const id = uniqueId('sign');
+      library.designs[id] = newDesign(id, '新しい標識');
+    }
+    const want = raw && raw.currentId;
+    switchTo(library.designs[want] ? want : Object.keys(library.designs)[0], true);
+  }
+
+  function switchTo(id, quiet) {
+    design = library.designs[id];
+    library.currentId = id;
+    undoStack = []; redoStack = [];
+    lastSnap = JSON.stringify(design);
+    selected = -1;
+    if (!quiet) saveLibrary();
+    refreshAll();
+  }
+
+  // 変更を確定する(取り消しの履歴に残す)
+  function commit() {
+    const s = JSON.stringify(design);
+    if (s === lastSnap) return;
+    undoStack.push(lastSnap);
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    redoStack = [];
+    lastSnap = s;
+    saveLibrary();
+  }
+  function undo() {
+    if (!undoStack.length) return;
+    redoStack.push(lastSnap);
+    const s = undoStack.pop();
+    design = JSON.parse(s); lastSnap = s; selected = Math.min(selected, design.elements.length - 1);
+    library.designs[design.id] = design; saveLibrary(); refreshAll();
+  }
+  function redo() {
+    if (!redoStack.length) return;
+    undoStack.push(lastSnap);
+    const s = redoStack.pop();
+    design = JSON.parse(s); lastSnap = s; selected = Math.min(selected, design.elements.length - 1);
+    library.designs[design.id] = design; saveLibrary(); refreshAll();
+  }
+
+  // ---- 描画(編集画面) ----
+  const canvas = $('stage');
+  const g = canvas.getContext('2d');
+  function draw() {
+    const W = canvas.clientWidth, H = canvas.clientHeight;
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+    }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#eef1f5';
+    g.fillRect(0, 0, W, H);
+    const sw = design.size.width, sh = design.size.height;
+    // 1ブロックの画素数。板の全体が画面に入るように決める(1×1のときは従来どおり)
+    const U = Math.max(50, Math.min((W * 0.92) / sw, (H * 0.92) / sh));
+    const bw = U * sw, bh = U * sh;
+    view = { x0: (W - bw) / 2, y0: (H - bh) / 2, U, bw, bh };
+    g.save();
+    g.translate(view.x0, view.y0);
+    // 板の外側を薄く示す
+    g.fillStyle = 'rgba(128,128,128,0.10)';
+    g.fillRect(-4, -4, bw + 8, bh + 8);
+    paintBoard(g, design, U, true);
+    g.restore();
+    if (selected >= 0 && design.elements[selected]) drawSelection(design.elements[selected]);
+  }
+
+  function drawSelection(el) {
+    const { bw, bh } = view;
+    g.save();
+    g.translate(view.x0, view.y0);
+    g.strokeStyle = '#1c7ed6';
+    g.fillStyle = '#ffffff';
+    g.lineWidth = 1.5;
+    const hs = 6;
+    if (el.type === 'line' || el.type === 'arrow') {
+      g.setLineDash([4, 3]);
+      g.beginPath(); g.moveTo(el.x1 * bw, el.y1 * bh); g.lineTo(el.x2 * bw, el.y2 * bh); g.stroke();
+      g.setLineDash([]);
+      for (const [x, y] of [[el.x1, el.y1], [el.x2, el.y2]]) {
+        g.beginPath(); g.arc(x * bw, y * bh, hs, 0, Math.PI * 2); g.fill(); g.stroke();
+      }
+    } else {
+      const t = rotOf(el), cx = (el.x + el.w / 2) * bw, cy = (el.y + el.h / 2) * bh;
+      g.save();
+      g.translate(cx, cy); g.rotate(t);
+      g.setLineDash([4, 3]);
+      g.strokeRect(-el.w * bw / 2, -el.h * bh / 2, el.w * bw, el.h * bh);
+      g.setLineDash([]);
+      g.restore();
+      const [hx, hy] = worldOfLocal(el, el.w * design.size.width / 2, el.h * design.size.height / 2);
+      g.beginPath(); g.rect(hx * bw - hs, hy * bh - hs, hs * 2, hs * 2); g.fill(); g.stroke();
+    }
+    g.restore();
+  }
+
+  // 画面の座標 → 板の上の割合(0〜1)
+  function toNorm(e) {
+    const rect = canvas.getBoundingClientRect();
+    return [(e.clientX - rect.left - view.x0) / view.bw, (e.clientY - rect.top - view.y0) / view.bh];
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const [px, py] = toNorm(e);
+    const sel = design.elements[selected];
+    const h = sel ? handleAt(sel, px, py) : null;
+    if (sel && h) {
+      drag = { mode: 'handle', kind: h, start: JSON.parse(JSON.stringify(sel)), p0: [px, py] };
+    } else {
+      const i = hitTest(px, py);
+      if (i >= 0) {
+        selected = i;
+        drag = { mode: 'move', index: i, start: JSON.parse(JSON.stringify(design.elements[i])), p0: [px, py] };
+      } else {
+        selected = -1;
+        drag = null;
+      }
+    }
+    canvas.setPointerCapture(e.pointerId);
+    refreshLayers(); refreshSide(); draw();
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    const [px, py] = toNorm(e);
+    if (!drag) {
+      canvas.style.cursor = hitTest(px, py) >= 0 ? 'move' : 'default';
+      return;
+    }
+    const el = design.elements[drag.mode === 'move' ? drag.index : selected];
+    if (!el) return;
+    const s = drag.start;
+    const dx = px - drag.p0[0], dy = py - drag.p0[1];
+    if (drag.mode === 'move') {
+      if (el.type === 'line' || el.type === 'arrow') {
+        el.x1 = s.x1 + dx; el.y1 = s.y1 + dy; el.x2 = s.x2 + dx; el.y2 = s.y2 + dy;
+      } else {
+        el.x = s.x + dx; el.y = s.y + dy;
+      }
+    } else if (drag.kind === 'p1') {
+      el.x1 = px; el.y1 = py;
+    } else if (drag.kind === 'p2') {
+      el.x2 = px; el.y2 = py;
+    } else if (drag.kind === 'br') {
+      // 左上の角を固定して、右下を動かす(回転を考慮。単位はブロック)
+      const W = design.size.width, H = design.size.height;
+      const [ax, ay] = worldOfLocal(s, -s.w * W / 2, -s.h * H / 2);
+      const [lx, ly] = localOf({ x: ax, y: ay, w: 0, h: 0, rotation: s.rotation }, px, py);
+      const nwB = Math.max(0.005, lx), nhB = Math.max(0.005, ly);
+      const t = rotOf(s);
+      const AX = ax * W, AY = ay * H;
+      const cX = AX + (nwB / 2) * Math.cos(t) - (nhB / 2) * Math.sin(t);
+      const cY = AY + (nwB / 2) * Math.sin(t) + (nhB / 2) * Math.cos(t);
+      el.w = nwB / W; el.h = nhB / H;
+      el.x = (cX - nwB / 2) / W; el.y = (cY - nhB / 2) / H;
+    }
+    draw();
+  });
+
+  function endDrag() {
+    if (!drag) return;
+    drag = null;
+    commit();
+    refreshLayers(); refreshSide(); draw();
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
+  // ---- 追加・並べ替え・削除 ----
+  function addElement(type, opt) {
+    let el;
+    if (type === 'text') el = DEFAULTS.text(opt === 'input');
+    else el = DEFAULTS[type]();
+    if (design.elements.length >= MAX_ELEMENTS) { toast(`要素は ${MAX_ELEMENTS} 個までです`); return; }
+    // 同じ位置に重ならないよう、追加するたびに少しずつずらす
+    const off = (design.elements.length % 5) * 0.03;
+    if (el.type === 'line' || el.type === 'arrow') { el.x1 += off; el.x2 += off; el.y1 += off; el.y2 += off; }
+    else { el.x += off; el.y += off; }
+    design.elements.push(el);
+    selected = design.elements.length - 1;
+    commit();
+    refreshAll();
+  }
+
+  function removeSelected() {
+    if (selected < 0) return;
+    design.elements.splice(selected, 1);
+    selected = -1;
+    commit();
+    refreshAll();
+  }
+
+  function duplicateSelected() {
+    if (selected < 0) return;
+    if (design.elements.length >= MAX_ELEMENTS) { toast(`要素は ${MAX_ELEMENTS} 個までです`); return; }
+    const c = JSON.parse(JSON.stringify(design.elements[selected]));
+    for (const k of ['x', 'y']) if (k in c) c[k] = Math.min(1, c[k] + 0.03);
+    if (c.type === 'line' || c.type === 'arrow') { c.x1 += 0.03; c.x2 += 0.03; c.y1 += 0.03; c.y2 += 0.03; }
+    design.elements.splice(selected + 1, 0, c);
+    selected = selected + 1;
+    commit();
+    refreshAll();
+  }
+
+  function moveSelected(delta) {
+    const j = selected + delta;
+    if (selected < 0 || j < 0 || j >= design.elements.length) return;
+    const t = design.elements[selected];
+    design.elements[selected] = design.elements[j];
+    design.elements[j] = t;
+    selected = j;
+    commit();
+    refreshAll();
+  }
+
+  // ---- 右側のパネル ----
+  const elName = (el) => {
+    switch (el.type) {
+      case 'shape': return '図形: ' + (SHAPE_KINDS.find((s) => s[0] === el.kind) || ['', '図形'])[1];
+      case 'image': return '画像';
+      case 'line': return '線';
+      case 'arrow': return '矢印';
+      case 'symbol': return '記号: ' + (SYMBOLS.find((s) => s[0] === el.name) || ['', ''])[1];
+      case 'text': return el.input ? '入力文字: ' + (el.label || '文字') : '固定文字: ' + el.text;
+      default: return '?';
+    }
+  };
+
+  function refreshLayers() {
+    const box = $('layers');
+    box.textContent = '';
+    if (!design.elements.length) {
+      box.innerHTML = '<div class="note">要素はまだありません。左から追加します。</div>';
+      return;
+    }
+    for (let i = design.elements.length - 1; i >= 0; i--) {
+      const el = design.elements[i];
+      const row = document.createElement('div');
+      row.className = 'layer' + (i === selected ? ' on' : '');
+      const t = document.createElement('span');
+      t.textContent = elName(el);
+      t.style.flex = '1';
+      t.style.overflow = 'hidden';
+      t.style.textOverflow = 'ellipsis';
+      t.style.whiteSpace = 'nowrap';
+      row.append(t);
+      row.addEventListener('click', () => { selected = i; refreshLayers(); refreshSide(); draw(); });
+      box.append(row);
+    }
+  }
+
+  function field(label, control) {
+    const row = document.createElement('div');
+    row.className = 'field';
+    const s = document.createElement('span');
+    s.textContent = label;
+    row.append(s, control);
+    return row;
+  }
+
+  function selectControl(options, value, onChange) {
+    const sel = document.createElement('select');
+    for (const [v, l] of options) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = l;
+      sel.append(o);
+    }
+    sel.value = value;
+    sel.addEventListener('change', () => onChange(sel.value));
+    return sel;
+  }
+
+  // 数値の入力欄。pct は画面では%で扱い、中身は割合(0〜1)で持つ
+  function numControl(el, key, opt) {
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.step = opt.step || 0.5;
+    if (opt.min !== undefined) inp.min = opt.min;
+    if (opt.max !== undefined) inp.max = opt.max;
+    inp.value = opt.pct ? +(el[key] * 100).toFixed(2) : +(el[key] ?? 0).toFixed(3);
+    inp.addEventListener('input', () => {
+      const v = Number(inp.value);
+      if (!Number.isFinite(v)) return;
+      el[key] = opt.pct ? v / 100 : v;
+      draw();
+    });
+    inp.addEventListener('change', () => { commit(); refreshLayers(); });
+    return inp;
+  }
+
+  function colorControl(el, key) {
+    const inp = document.createElement('input');
+    inp.type = 'color';
+    inp.value = el[key];
+    inp.addEventListener('input', () => { el[key] = inp.value; draw(); });
+    inp.addEventListener('change', () => { commit(); refreshLayers(); });
+    return inp;
+  }
+
+  function textControl(el, key, onChange) {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = el[key];
+    inp.addEventListener('input', () => { el[key] = inp.value; draw(); if (onChange) onChange(); });
+    inp.addEventListener('change', () => { commit(); refreshLayers(); });
+    return inp;
+  }
+
+  function checkControl(el, key, onChange) {
+    const inp = document.createElement('input');
+    inp.type = 'checkbox';
+    inp.checked = !!el[key];
+    inp.addEventListener('change', () => { el[key] = inp.checked; commit(); refreshLayers(); draw(); if (onChange) onChange(); refreshSide(); });
+    return inp;
+  }
+
+  function refreshSide() {
+    const body = $('selBody');
+    const acts = $('selActions');
+    body.textContent = '';
+    if (selected < 0 || !design.elements[selected]) {
+      body.className = 'note';
+      body.textContent = '要素を選ぶと、ここで編集できます。';
+      acts.style.display = 'none';
+      refreshBoardFields();
+      return;
+    }
+    const el = design.elements[selected];
+    body.className = '';
+    acts.style.display = 'flex';
+    const P = { pct: true, step: 0.5 };
+    const pos = (k) => field(k.toUpperCase() + ' (%)', numControl(el, k, { ...P, min: -100, max: 200 }));
+    const rows = [];
+    if (el.type === 'shape') {
+      rows.push(field('形', selectControl(SHAPE_KINDS, el.kind, (v) => { el.kind = v; commit(); draw(); refreshLayers(); })));
+      rows.push(pos('x'), pos('y'));
+      rows.push(field('幅 (%)', numControl(el, 'w', { ...P, min: 0.1, max: 200 })));
+      rows.push(field('高さ (%)', numControl(el, 'h', { ...P, min: 0.1, max: 200 })));
+      rows.push(field('回転(度)', numControl(el, 'rotation', { step: 1, min: -180, max: 180 })));
+      rows.push(field('塗り', colorControl(el, 'fill')));
+      rows.push(field('線の色', colorControl(el, 'stroke')));
+      rows.push(field('線の太さ (%)', numControl(el, 'strokeWidth', { ...P, min: 0, max: 20 })));
+    } else if (el.type === 'image') {
+      rows.push(pos('x'), pos('y'));
+      rows.push(field('幅 (%)', numControl(el, 'w', { ...P, min: 0.1, max: 200 })));
+      rows.push(field('高さ (%)', numControl(el, 'h', { ...P, min: 0.1, max: 200 })));
+      rows.push(field('回転(度)', numControl(el, 'rotation', { step: 1, min: -180, max: 180 })));
+    } else if (el.type === 'line' || el.type === 'arrow') {
+      rows.push(field('始点X (%)', numControl(el, 'x1', { ...P, min: -100, max: 200 })));
+      rows.push(field('始点Y (%)', numControl(el, 'y1', { ...P, min: -100, max: 200 })));
+      rows.push(field('終点X (%)', numControl(el, 'x2', { ...P, min: -100, max: 200 })));
+      rows.push(field('終点Y (%)', numControl(el, 'y2', { ...P, min: -100, max: 200 })));
+      rows.push(field('色', colorControl(el, 'color')));
+      rows.push(field('太さ (%)', numControl(el, 'width', { ...P, min: 0.1, max: 30 })));
+      if (el.type === 'arrow') rows.push(field('矢じりの大きさ', numControl(el, 'headSize', { step: 0.5, min: 1, max: 6 })));
+    } else if (el.type === 'symbol') {
+      rows.push(field('記号', selectControl(SYMBOLS, el.name, (v) => { el.name = v; commit(); draw(); refreshLayers(); })));
+      rows.push(pos('x'), pos('y'));
+      rows.push(field('幅 (%)', numControl(el, 'w', { ...P, min: 0.1, max: 200 })));
+      rows.push(field('高さ (%)', numControl(el, 'h', { ...P, min: 0.1, max: 200 })));
+      rows.push(field('回転(度)', numControl(el, 'rotation', { step: 1, min: -180, max: 180 })));
+      rows.push(field('色', colorControl(el, 'color')));
+    } else if (el.type === 'text') {
+      const ck = checkControl(el, 'input');
+      rows.push(field('ゲーム内で入力', ck));
+      if (el.input) {
+        rows.push(field('入力欄の名前', textControl(el, 'label')));
+        rows.push(field('初期の文字', textControl(el, 'text')));
+        rows.push(field('最大の文字数', numControl(el, 'maxLength', { step: 1, min: 1, max: 32 })));
+      } else {
+        rows.push(field('文字', textControl(el, 'text')));
+      }
+      rows.push(field('書体', selectControl(Object.keys(FONTS).map((k) => [k, FONT_LABEL[k]]), el.font, (v) => { el.font = v; commit(); draw(); })));
+      rows.push(field('太字', checkControl(el, 'bold')));
+      rows.push(field('揃え', selectControl([['left', '左'], ['center', '中央'], ['right', '右']], el.align, (v) => { el.align = v; commit(); draw(); })));
+      rows.push(field('色', colorControl(el, 'color')));
+      rows.push(pos('x'), pos('y'));
+      rows.push(field('幅 (%)', numControl(el, 'w', { ...P, min: 0.1, max: 200 })));
+      rows.push(field('高さ (%)', numControl(el, 'h', { ...P, min: 0.1, max: 200 })));
+      rows.push(field('回転(度)', numControl(el, 'rotation', { step: 1, min: -180, max: 180 })));
+    }
+    for (const r of rows) body.append(r);
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.textContent = el.type === 'text' && el.input
+      ? 'ゲーム内では、この欄に文字を入力できます。板の中の位置と大きさは、ここで決めた値のとおりです。'
+      : (el.type === 'image' ? '位置と大きさは、板に対する割合です。板の大きさを変えても、板の中の位置は保たれます。' : '');
+    if (note.textContent) body.append(note);
+  }
+
+  function refreshBoardFields() {
+    $('boardShape').value = design.board.shape;
+    $('boardBg').value = design.board.background;
+    $('boardBorder').value = design.board.border;
+    $('boardBorderW').value = +(design.board.borderWidth * 100).toFixed(2);
+    $('boardW').value = design.size.width;
+    $('boardH').value = design.size.height;
+    $('offX').value = +design.offset.x.toFixed(3);
+    $('offY').value = +design.offset.y.toFixed(3);
+    $('offZ').value = +design.offset.z.toFixed(3);
+  }
+
+  function refreshTop() {
+    $('name').value = design.name;
+    $('id').value = design.id;
+    $('idErr').textContent = '';
+    refreshBoardFields();
+  }
+
+  function refreshLibrary() {
+    const sel = $('libSelect');
+    sel.textContent = '';
+    for (const id of Object.keys(library.designs).sort()) {
+      const o = document.createElement('option');
+      o.value = id;
+      o.textContent = `${library.designs[id].name} (${id})`;
+      sel.append(o);
+    }
+    sel.value = design.id;
+  }
+
+  function refreshAll() {
+    refreshTop();
+    refreshLibrary();
+    refreshLayers();
+    refreshSide();
+    draw();
+  }
+
+  // ---- 書き出し ----
+  function download(name, blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  // base は1ブロックの画素数。板の一辺が上限を超えないように小さくする
+  async function renderPNG(d, base) {
+    await ensureImages(d);
+    const maxSide = Math.max(d.size.width, d.size.height);
+    const U = Math.max(16, Math.min(base, Math.floor(EXPORT_MAX_PX / maxSide)));
+    const c = document.createElement('canvas');
+    c.width = U * d.size.width; c.height = U * d.size.height;
+    paintBoard(c.getContext('2d'), d, U, false);
+    return new Promise((resolve) => c.toBlob((b) => resolve(b), 'image/png'));
+  }
+
+  function idProblem(id) {
+    if (!ID_RE.test(id)) return 'IDは英小文字・数字・_ で、48文字以内にしてください';
+    return '';
+  }
+
+  async function exportDesign(d, base) {
+    const json = JSON.stringify(toJSON(d), null, 2);
+    download(`${d.id}.json`, new Blob([json], { type: 'application/json' }));
+    const png = await renderPNG(d, base);
+    download(`${d.id}.png`, png);
+  }
+
+  async function exportOne() {
+    const p = idProblem(design.id);
+    if (p) { toast(p); return; }
+    await exportDesign(design, Number($('pngSize').value));
+    toast(`${design.id}.json と ${design.id}.png を書き出しました`);
+  }
+
+  async function exportAll() {
+    saveLibrary();
+    const ids = Object.keys(library.designs).sort();
+    for (const id of ids) if (idProblem(id)) { toast(`IDが不正な標識があります: ${id}`); return; }
+    const base = Number($('pngSize').value);
+    const index = {
+      format: IDX_FMT, version: 1,
+      signs: ids.map((id) => ({ id, name: library.designs[id].name })),
+    };
+    download('index.json', new Blob([JSON.stringify(index, null, 2)], { type: 'application/json' }));
+    for (const id of ids) await exportDesign(library.designs[id], base);
+    toast(`${ids.length} 件の標識と index.json を書き出しました`);
+  }
+
+  // ---- 画像の取り込み ----
+  const readAsDataURL = (f) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error('ファイルを読めませんでした'));
+    r.readAsDataURL(f);
+  });
+  const loadImageEl = (src) => new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('画像として読めませんでした'));
+    im.src = src;
+  });
+  // 1024px まで縮めて、PNG で保存する。大きすぎるときは JPEG(白地)にする
+  async function shrinkImage(file) {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) throw new Error('PNG・JPEG・WebP の画像を選んでください');
+    const im = await loadImageEl(await readAsDataURL(file));
+    const k = Math.min(1, 1024 / Math.max(im.naturalWidth, im.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(im.naturalWidth * k));
+    c.height = Math.max(1, Math.round(im.naturalHeight * k));
+    const cg = c.getContext('2d');
+    cg.drawImage(im, 0, 0, c.width, c.height);
+    let url = c.toDataURL('image/png');
+    if (url.length > MAX_IMAGE_CHARS) {
+      cg.globalCompositeOperation = 'destination-over';
+      cg.fillStyle = '#ffffff';
+      cg.fillRect(0, 0, c.width, c.height);
+      url = c.toDataURL('image/jpeg', 0.85);
+    }
+    if (url.length > MAX_IMAGE_CHARS) throw new Error('画像が大きすぎます。小さい画像にしてください');
+    return { url, aspect: c.width / c.height };
+  }
+
+  $('imageFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      if (design.elements.length >= MAX_ELEMENTS) throw new Error(`要素は ${MAX_ELEMENTS} 個までです`);
+      if (design.elements.filter((x) => x.type === 'image').length >= MAX_IMAGES) throw new Error(`画像は ${MAX_IMAGES} 個までです`);
+      const { url, aspect } = await shrinkImage(f);
+      // 板の中に収まる大きさで置く。縦横比は画像のまま(板の大きさを考えて計算する)
+      const W = design.size.width, H = design.size.height;
+      let w = 0.6;
+      let h = (w * W) / (aspect * H);
+      if (h > 0.6) { h = 0.6; w = (aspect * H * h) / W; }
+      design.elements.push({ type: 'image', src: url, x: (1 - w) / 2, y: (1 - h) / 2, w, h, rotation: 0 });
+      selected = design.elements.length - 1;
+      commit();
+      refreshAll();
+    } catch (err) {
+      toast('画像を取り込めませんでした: ' + err.message);
+    }
+  });
+
+  // ---- 入力の結線 ----
+  $('name').addEventListener('input', () => { design.name = $('name').value; library.designs[design.id] = design; });
+  $('name').addEventListener('change', () => { commit(); refreshLibrary(); });
+
+  $('id').addEventListener('input', () => {
+    const v = $('id').value;
+    const p = idProblem(v);
+    if (p) { $('idErr').textContent = p; return; }
+    if (v !== design.id && library.designs[v]) { $('idErr').textContent = 'そのIDは既に使われています'; return; }
+    $('idErr').textContent = '';
+  });
+  $('id').addEventListener('change', () => {
+    const v = $('id').value;
+    if (v === design.id) return;
+    if (idProblem(v) || library.designs[v]) { $('id').value = design.id; $('idErr').textContent = ''; return; }
+    const old = design.id;
+    delete library.designs[old];
+    design.id = v;
+    library.designs[v] = design;
+    lastSnap = JSON.stringify(design);
+    saveLibrary();
+    refreshAll();
+  });
+
+  $('boardShape').innerHTML = BOARD_SHAPES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  $('boardShape').addEventListener('change', () => { design.board.shape = $('boardShape').value; commit(); draw(); });
+  $('boardBg').addEventListener('input', () => { design.board.background = $('boardBg').value; draw(); });
+  $('boardBg').addEventListener('change', () => commit());
+  $('boardBorder').addEventListener('input', () => { design.board.border = $('boardBorder').value; draw(); });
+  $('boardBorder').addEventListener('change', () => commit());
+  $('boardBorderW').addEventListener('input', () => { const v = Number($('boardBorderW').value); if (Number.isFinite(v)) { design.board.borderWidth = clampN(v / 100, 0, 0.2, 0.04); draw(); } });
+  $('boardBorderW').addEventListener('change', () => commit());
+
+  // 板の大きさ(横・縦のブロック数)
+  for (const [id, key] of [['boardW', 'width'], ['boardH', 'height']]) {
+    $(id).addEventListener('input', () => {
+      const v = Math.round(Number($(id).value));
+      if (Number.isFinite(v)) { design.size[key] = clampN(v, 1, MAX_SIZE, 1); draw(); }
+    });
+    $(id).addEventListener('change', () => {
+      design.size[key] = clampN(Math.round(Number($(id).value)), 1, MAX_SIZE, 1);
+      $(id).value = design.size[key];
+      commit(); draw(); refreshSide();
+    });
+  }
+  // 既定のずらし量(右・上・手前)
+  for (const [id, key] of [['offX', 'x'], ['offY', 'y'], ['offZ', 'z']]) {
+    $(id).addEventListener('input', () => {
+      const v = Number($(id).value);
+      if (Number.isFinite(v)) design.offset[key] = clampN(v, -MAX_OFFSET, MAX_OFFSET, 0);
+    });
+    $(id).addEventListener('change', () => {
+      design.offset[key] = clampN(Number($(id).value), -MAX_OFFSET, MAX_OFFSET, 0);
+      $(id).value = +design.offset[key].toFixed(3);
+      commit();
+    });
+  }
+
+  document.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => {
+    const v = b.dataset.add;
+    if (v.startsWith('shape:')) { addElement('shape'); design.elements[selected].kind = v.slice(6); }
+    else if (v === 'line') addElement('line');
+    else if (v === 'arrow') addElement('arrow');
+    else if (v === 'text:fixed') addElement('text', 'fixed');
+    else if (v === 'text:input') addElement('text', 'input');
+  }));
+
+  const symGrid = $('symGrid');
+  for (const [name, label] of SYMBOLS) {
+    const b = document.createElement('button');
+    b.className = 'plain';
+    b.title = label;
+    b.style.padding = '4px 2px';
+    const c = document.createElement('canvas');
+    c.width = 40; c.height = 40;
+    c.style.width = '32px'; c.style.height = '32px';
+    const cg = c.getContext('2d');
+    cg.translate(20, 20);
+    drawSymbol(cg, name, 16, '#1a1a1a');
+    b.append(c);
+    const t = document.createElement('div');
+    t.textContent = label;
+    t.style.fontSize = '10px';
+    b.append(t);
+    b.addEventListener('click', () => { addElement('symbol'); design.elements[selected].name = name; });
+    symGrid.append(b);
+  }
+
+  $('btnUp').addEventListener('click', () => moveSelected(1));
+  $('btnDown').addEventListener('click', () => moveSelected(-1));
+  $('btnDupEl').addEventListener('click', duplicateSelected);
+  $('btnDelEl').addEventListener('click', removeSelected);
+
+  $('libSelect').addEventListener('change', () => switchTo($('libSelect').value));
+  $('btnNew').addEventListener('click', () => {
+    const id = uniqueId('sign');
+    library.designs[id] = newDesign(id, '新しい標識');
+    switchTo(id);
+  });
+  $('btnDup').addEventListener('click', () => {
+    const id = uniqueId(design.id.replace(/_\d+$/, '') || 'sign');
+    const c = JSON.parse(JSON.stringify(design));
+    c.id = id; c.name = design.name + ' (コピー)';
+    library.designs[id] = c;
+    switchTo(id);
+  });
+  $('btnDel').addEventListener('click', () => {
+    if (!confirm(`「${design.name}」を削除しますか？`)) return;
+    delete library.designs[design.id];
+    const left = Object.keys(library.designs);
+    if (!left.length) {
+      const id = uniqueId('sign');
+      library.designs[id] = newDesign(id, '新しい標識');
+    }
+    switchTo(Object.keys(library.designs).sort()[0]);
+  });
+
+  $('importFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      const raw = JSON.parse(await f.text());
+      const d = sanitizeDesign(raw);
+      if (library.designs[d.id]) { d.id = uniqueId(d.id.replace(/_\d+$/, '')); d.name += ' (読み込み)'; toast('同じIDがあったため、新しいIDにしました'); }
+      library.designs[d.id] = d;
+      switchTo(d.id);
+    } catch (err) {
+      toast('読み込めませんでした: ' + err.message);
+    }
+  });
+
+  $('btnExportOne').addEventListener('click', exportOne);
+  $('btnExportAll').addEventListener('click', exportAll);
+
+  window.addEventListener('keydown', (e) => {
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    const typing = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+    if ((e.ctrlKey || e.metaKey) && !typing) {
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+      if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); return; }
+    }
+    if (typing) return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selected >= 0) { e.preventDefault(); removeSelected(); return; }
+    if (selected >= 0 && e.key.startsWith('Arrow')) {
+      e.preventDefault();
+      const d = e.shiftKey ? 0.02 : 0.005;
+      const el = design.elements[selected];
+      const dx = e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0;
+      const dy = e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0;
+      if (el.type === 'line' || el.type === 'arrow') { el.x1 += dx; el.x2 += dx; el.y1 += dy; el.y2 += dy; }
+      else { el.x += dx; el.y += dy; }
+      commit(); draw(); refreshLayers();
+    }
+  });
+
+  window.addEventListener('resize', draw);
+  loadLibrary();
+  refreshAll();
+
+  // テスト・デバッグ用
+  window.signDesigner = {
+    get design() { return design; },
+    get view() { return view; },
+    addElement, sanitizeDesign, toJSON, paintBoard, renderPNG, exportOne, exportAll, undo, redo,
+    switchTo, newDesign, uniqueId, library: () => library,
+    select(i) { selected = i; refreshLayers(); refreshSide(); draw(); },
+    hitTest,
+  };
+})();
+</script>
+</body>
+</html>
