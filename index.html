@@ -111,6 +111,8 @@
         <button data-add="shape:triangle">三角</button>
         <button data-add="shape:diamond">ひし形</button>
         <button data-add="shape:octagon">八角</button>
+        <button data-add="shape:national">国道(おにぎり)</button>
+        <button data-add="shape:prefectural">県道(六角形)</button>
       </div>
     </section>
     <section>
@@ -214,7 +216,7 @@
   };
   const FONT_LABEL = { sans: 'ゴシック', round: '丸ゴシック', serif: '明朝', mono: '等幅' };
   const BOARD_SHAPES = [['rect', '四角'], ['rounded', '角丸'], ['circle', '円'], ['triangle', '三角'], ['diamond', 'ひし形'], ['octagon', '八角']];
-  const SHAPE_KINDS = [['rect', '四角'], ['rounded', '角丸'], ['ellipse', '楕円'], ['triangle', '三角'], ['diamond', 'ひし形'], ['octagon', '八角']];
+  const SHAPE_KINDS = [['rect', '四角'], ['rounded', '角丸'], ['ellipse', '楕円'], ['triangle', '三角'], ['diamond', 'ひし形'], ['octagon', '八角'], ['national', '国道(おにぎり)'], ['prefectural', '県道(六角形)']];
   const SYMBOLS = [['no_entry', '進入禁止'], ['no_parking', '駐車禁止'], ['pedestrian', '歩行者'], ['bicycle', '自転車'],
     ['warning', '注意'], ['info', '案内'], ['parking', '駐車場'], ['hospital', '病院'], ['crosswalk', '横断歩道'],
     ['chevron', '曲がり'], ['home', '施設']];
@@ -366,10 +368,28 @@
     g.closePath();
   }
 
+  // 頂点の列を、各角を半径 r で丸めた多角形にする(arcTo の並び。最初の辺の中点から始める)
+  function roundPolyPath(g, pts, r) {
+    const n = pts.length;
+    g.moveTo((pts[n - 1][0] + pts[0][0]) / 2, (pts[n - 1][1] + pts[0][1]) / 2);
+    for (let i = 0; i < n; i++) {
+      const p = pts[i], q = pts[(i + 1) % n];
+      g.arcTo(p[0], p[1], q[0], q[1], r);
+    }
+    g.closePath();
+  }
+
   function shapePath(g, kind, x, y, w, h) {
     g.beginPath();
     switch (kind) {
       case 'rounded': roundRectPath(g, x, y, w, h, Math.min(w, h) * 0.2); break;
+      // 国道(おにぎり): 角丸の三角を上下反転した形(頂点が下)
+      case 'national': roundPolyPath(g, [[x, y], [x + w, y], [x + w / 2, y + h]], Math.min(w, h) * 0.12); break;
+      // 県道: 六角形(左右の頂点が尖り、上下は平ら)
+      case 'prefectural':
+        roundPolyPath(g, [[x + w * 0.25, y], [x + w * 0.75, y], [x + w, y + h / 2],
+          [x + w * 0.75, y + h], [x + w * 0.25, y + h], [x, y + h / 2]], Math.min(w, h) * 0.06);
+        break;
       case 'ellipse':
       case 'circle': g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); break;
       case 'triangle': g.moveTo(x + w / 2, y); g.lineTo(x + w, y + h); g.lineTo(x, y + h); g.closePath(); break;
